@@ -1,6 +1,22 @@
 {
+  "name": "grocery-budget-tracker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
   "dependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "tailwindcss": "^4.3.0"
+    "@tailwindcss/vite": "latest",
+    "@vitejs/plugin-react": "latest",
+    "tailwindcss": "latest",
+    "vite-plugin-pwa": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest"
   }
 }
