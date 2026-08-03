@@ -1,21 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
 
-type Screen = "home" | "grocery" | "history";
+type Screen =
+  | "home"
+  | "grocery"
+  | "history"
+  | "share";
+
+type Store = {
+  id: string;
+  name: string;
+};
+
 
 type GroceryItem = {
   id: string;
   name: string;
   price: number;
   quantity: number;
+  storeId: string;
 };
 
 type GroceryTrip = {
   id: string;
   date: string;
   budget: number;
-  items: GroceryItem[];
-  spent: number;
-  remaining: number;
+
+  stores: {
+    id:string;
+    name:string;
+    items:GroceryItem[];
+    total:number;
+  }[];
+
+  spent:number;
+  remaining:number;
 };
 
 const STORAGE_KEYS = {
@@ -23,7 +41,9 @@ const STORAGE_KEYS = {
   budget: "grocery-budget-tracker-budget",
   items: "grocery-budget-tracker-items",
   history: "grocery-budget-tracker-history",
+  stores: "grocery-budget-tracker-stores",
 };
+
 const createId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -60,10 +80,19 @@ const [budget, setBudget] = useState<number>(() => {
 const [itemName, setItemName] = useState("");
 const [itemPrice, setItemPrice] = useState("");
 const [itemQuantity, setItemQuantity] = useState("1");
+
+const [selectedStoreId, setSelectedStoreId] = useState("");
+
 const [editingItemId, setEditingItemId] = useState<string | null>(null);
 const [editItemName, setEditItemName] = useState("");
 const [editItemPrice, setEditItemPrice] = useState("");
 const [editItemQuantity, setEditItemQuantity] = useState("1");
+
+const [sharedData,setSharedData] = useState<{
+  budget:number;
+  items:GroceryItem[];
+  stores:Store[];
+} | null>(null);
 
 const [items, setItems] = useState<GroceryItem[]>(() => {
   const savedItems = localStorage.getItem(STORAGE_KEYS.items);
@@ -84,12 +113,37 @@ const [items, setItems] = useState<GroceryItem[]>(() => {
         typeof item.id === "string" &&
         typeof item.name === "string" &&
         typeof item.price === "number" &&
-        typeof item.quantity === "number"
+        typeof item.quantity === "number" &&
+        (
+          typeof item.storeId === "string" ||
+          item.storeId === undefined
+        )
       );
     });
   } catch {
     return [];
   }
+});
+
+const [stores,setStores] = useState<Store[]>(()=>{
+
+const saved =
+localStorage.getItem(STORAGE_KEYS.stores);
+
+if(!saved){
+ return [];
+}
+
+try{
+
+return JSON.parse(saved);
+
+}catch{
+
+return [];
+
+}
+
 });
 
 const [history, setHistory] = useState<GroceryTrip[]>(() => {
@@ -111,7 +165,7 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
         typeof trip.id === "string" &&
         typeof trip.date === "string" &&
         typeof trip.budget === "number" &&
-        Array.isArray(trip.items) &&
+        Array.isArray(trip.stores) &&
         typeof trip.spent === "number" &&
         typeof trip.remaining === "number"
       );
@@ -137,6 +191,85 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
     localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
   }, [history]);
 
+useEffect(()=>{
+
+localStorage.setItem(
+ STORAGE_KEYS.stores,
+ JSON.stringify(stores)
+ );
+
+},[stores]);
+
+useEffect(()=>{
+
+const params = new URLSearchParams(
+  window.location.search
+);
+
+const data = params.get("data");
+
+if(data){
+
+  try{
+
+   const decoded = JSON.parse(
+  atob(decodeURIComponent(data))
+);
+
+    setSharedData(decoded);
+    setScreen("share");
+
+  }catch(error){
+
+    console.error(
+      "Invalid share link",
+      error
+    );
+
+  }
+
+}
+
+},[]);
+const importSharedList = () => {
+  if (!sharedData) {
+    return;
+  }
+
+  const newStores = sharedData.stores.map(store => ({
+    ...store,
+    id:createId()
+  }));
+
+  const newItems = sharedData.items.map(item => {
+    const oldStore = sharedData.stores.find(
+      store => store.id === item.storeId
+    );
+
+    const newStore = newStores.find(
+      store => store.name === oldStore?.name
+    );
+
+    return {
+      ...item,
+      id:createId(),
+      storeId:newStore?.id ?? ""
+    };
+  });
+
+  setBudget(sharedData.budget);
+  setStores(newStores);
+  setItems(newItems);
+
+  setScreen("grocery");
+
+  window.history.replaceState(
+    {},
+    "",
+    "/"
+  );
+};
+
   const spent = useMemo(() => {
     return items.reduce((total, item) => {
       return total + item.price * item.quantity;
@@ -155,6 +288,24 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
     }).format(amount);
   };
 
+const addStore = (name:string) => {
+  const clean = name.trim();
+
+  if (!clean) return;
+
+  const newStore:Store = {
+    id:createId(),
+    name:clean
+  };
+
+  setStores(current => [
+    ...current,
+    newStore
+  ]);
+
+  setSelectedStoreId(newStore.id);
+};
+
   const addItem = () => {
     const cleanName = itemName.trim();
     const price = Number(itemPrice);
@@ -164,18 +315,25 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
       return;
     }
 
-    const newItem: GroceryItem = {
-      id: createId(),
-      name: cleanName,
+    const newItem:GroceryItem={
+
+      id:createId(),
+
+      name:cleanName,
+
       price,
+
       quantity,
+
+      storeId:selectedStoreId
+
     };
 
     setItems((currentItems) => [newItem, ...currentItems]);
     setItemName("");
     setItemPrice("");
     setItemQuantity("1");
-    setBudget(2000);
+    setSelectedStoreId("");
   };
 
   const removeItem = (id: string) => {
@@ -224,33 +382,85 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
   const clearList = () => {
     setItems([]);
   };
-  const saveTrip = () => {
-    if (items.length === 0) {
-      return;
+ const saveTrip = () => {
+    if(items.length === 0){
+    return;
     }
-
-    const newTrip: GroceryTrip = {
-      id: createId(),
-      date: new Date().toISOString(),
-      budget,
-      items,
-      spent,
-      remaining,
+    const groupedStores = stores
+    .map(store=>{
+    const storeItems =
+    items.filter(
+    item=>item.storeId === store.id
+    );
+    if(storeItems.length === 0){
+    return null;
+    }
+    return {
+    id:store.id,
+    name:store.name,
+    items:storeItems,
+    total:
+    storeItems.reduce(
+    (sum,item)=>
+    sum + item.price * item.quantity,
+    0
+    )
     };
-
-    setHistory((currentHistory) => [newTrip, ...currentHistory]);
+    })
+    .filter(Boolean);
+    const newTrip:GroceryTrip={
+    id:createId(),
+    date:new Date().toISOString(),
+    budget,
+    stores:
+    groupedStores as GroceryTrip["stores"],
+    spent,
+    remaining
+    };
+    setHistory(currentHistory=>[
+    newTrip,
+    ...currentHistory
+    ]);
     setItems([]);
     setItemName("");
     setItemPrice("");
+    setItemQuantity("1");
     setBudget(2000);
     setScreen("history");
-  };
+    };
 
   const deleteTrip = (id: string) => {
     setHistory((currentHistory) =>
       currentHistory.filter((trip) => trip.id !== id)
     );
   };
+
+const shareList = async () => {
+  const shareData = {
+    budget,
+    items,
+    stores
+  };
+
+  const encodedData = encodeURIComponent(
+    btoa(JSON.stringify(shareData))
+  );
+
+  const shareLink =
+    `${window.location.origin}/share?data=${encodedData}`;
+
+  if(navigator.share){
+    await navigator.share({
+      title:"Grocery List",
+      text:"Shared grocery list",
+      url:shareLink
+    });
+  }else{
+    await navigator.clipboard.writeText(shareLink);
+    alert("Grocery list link copied!");
+  }
+};
+
   return (
     <main className="min-h-screen bg-[#f7f3ec] px-4 py-6 text-[#2f2a24] sm:px-6">
       <section className="mx-auto max-w-md">
@@ -295,6 +505,11 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
             cancelEditingItem={cancelEditingItem}
             saveEditedItem={saveEditedItem}
             onBack={() => setScreen("home")}
+            stores={stores}
+            selectedStoreId={selectedStoreId}
+            setSelectedStoreId={setSelectedStoreId}
+            addStore={addStore}
+            shareList={shareList}
           />
         )}
 
@@ -305,6 +520,13 @@ const [history, setHistory] = useState<GroceryTrip[]>(() => {
             deleteTrip={deleteTrip}
             onBack={() => setScreen("home")}
           />
+        )}
+
+        {screen==="share" && sharedData && (
+        <ShareImportScreen
+          sharedData={sharedData}
+          importSharedList={importSharedList}
+        />
         )}
       </section>
     </main>
@@ -509,6 +731,16 @@ type GroceryScreenProps = {
   cancelEditingItem: () => void;
   saveEditedItem: () => void;
   onBack: () => void;
+  stores:Store[];
+
+  selectedStoreId:string;
+
+  setSelectedStoreId:
+  (id:string)=>void;
+
+  addStore:
+  (name:string)=>void;
+  shareList:()=>void;
 };
 
 function GroceryScreen({
@@ -541,7 +773,20 @@ function GroceryScreen({
   cancelEditingItem,
   saveEditedItem,
   onBack,
-}: GroceryScreenProps) {
+  stores,
+  selectedStoreId,
+  setSelectedStoreId,
+  addStore,
+  shareList,
+  }: GroceryScreenProps){
+    const groupedItems = stores.map((store)=>({
+    ...store,
+    items: items.filter(
+      item => item.storeId === store.id
+    )
+  })).filter(
+    store => store.items.length > 0
+  );
   return (
     <>
       <div className="mb-5 flex items-center justify-between">
@@ -659,6 +904,55 @@ function GroceryScreen({
         </div>
 
         <div className="mt-4 space-y-3">
+          <div className="rounded-2xl bg-[#fffaf4] p-3 ring-1 ring-[#eadbc8]">
+            <p className="mb-2 text-sm font-bold text-[#2f2a24]">
+              Manage Stores
+            </p>
+
+            <div className="flex gap-2">
+              <input
+                id="newStoreInput"
+                type="text"
+                placeholder="Store name"
+                className="flex-1 rounded-xl border border-[#e7d9c8] px-3 py-2 text-sm"
+              />
+
+              <button
+                onClick={() => {
+                  const input = document.getElementById(
+                    "newStoreInput"
+                  ) as HTMLInputElement;
+
+                  if (input.value.trim()) {
+                    addStore(input.value);
+                    input.value = "";
+                  }
+                }}
+                className="rounded-xl bg-[#2f2a24] px-3 py-2 text-sm font-semibold text-white"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          <select
+            value={selectedStoreId}
+            onChange={(e) => setSelectedStoreId(e.target.value)}
+            className="w-full rounded-2xl border border-[#e7d9c8] bg-[#fffaf4] px-4 py-3"
+          >
+            <option value="">
+              Select Store
+            </option>
+
+            {stores.map((store) => (
+              <option
+                key={store.id}
+                value={store.id}
+              >
+                {store.name}
+              </option>
+            ))}
+          </select>
           <input
             value={itemName}
             onChange={(event) => setItemName(event.target.value)}
@@ -730,103 +1024,125 @@ function GroceryScreen({
           </div>
         ) : (
           <div className="mt-4 space-y-3">
-            {items.map((item) => {
-              const isEditing = editingItemId === item.id;
+            {groupedItems.map((store)=>(
+              <div
+                key={store.id}
+                className="rounded-3xl bg-[#fffaf4] p-4 ring-1 ring-[#eadbc8]"
+              >
 
-              return (
-                <div
-                  key={item.id}
-                  className="rounded-3xl bg-[#fffaf4] p-4 ring-1 ring-[#eadbc8]"
-                >
-                  {isEditing ? (
-                    <div className="space-y-3">
-                      <input
-                        value={editItemName}
-                        onChange={(event) => setEditItemName(event.target.value)}
-                        className="w-full rounded-2xl border border-[#e7d9c8] bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-[#b9824f]"
-                        placeholder="Product name"
-                      />
+                <h3 className="mb-3 text-lg font-bold text-[#2f2a24]">
+                  🏪 {store.name}
+                </h3>
 
-                      <div className="grid grid-cols-[1fr_100px] gap-3">
-                        <input
-                          value={editItemPrice}
-                          onChange={(event) =>
-                            setEditItemPrice(event.target.value)
-                          }
-                          type="number"
-                          min="0"
-                          className="w-full rounded-2xl border border-[#e7d9c8] bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-[#b9824f]"
-                          placeholder="Price"
-                        />
 
-                        <input
-                          value={editItemQuantity}
-                          onChange={(event) =>
-                            setEditItemQuantity(event.target.value)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") saveEditedItem();
-                          }}
-                          type="number"
-                          min="1"
-                          className="w-full rounded-2xl border border-[#e7d9c8] bg-white px-4 py-3 text-center text-sm font-semibold outline-none focus:border-[#b9824f]"
-                          placeholder="Qty"
-                        />
-                      </div>
+                <div className="space-y-3">
 
-                      <div className="flex gap-2">
-                        <button
-                          onClick={saveEditedItem}
-                          className="flex-1 rounded-2xl bg-[#2f2a24] px-4 py-2.5 text-sm font-semibold text-white active:scale-[0.99]"
-                        >
-                          Save
-                        </button>
+                  {store.items.map((item)=>(
+                    <div
+                      key={item.id}
+                      className="rounded-2xl bg-white p-4 ring-1 ring-[#eadbc8]"
+                    >
+                      {editingItemId === item.id ? (
+                        <div className="space-y-3">
+                          <input
+                            value={editItemName}
+                            onChange={(e)=>setEditItemName(e.target.value)}
+                            className="w-full rounded-xl border border-[#e7d9c8] px-3 py-2"
+                          />
 
-                        <button
-                          onClick={cancelEditingItem}
-                          className="flex-1 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-[#51483f] ring-1 ring-[#eadbc8] active:scale-[0.99]"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-bold text-[#2f2a24]">
-                          {item.name}
-                        </p>
-                        <p className="mt-1 text-sm text-[#897b6e]">
-                          {formatPeso(item.price)} × {item.quantity}
-                        </p>
-                      </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <input
+                              value={editItemPrice}
+                              onChange={(e)=>setEditItemPrice(e.target.value)}
+                              type="number"
+                              className="rounded-xl border border-[#e7d9c8] px-3 py-2"
+                            />
 
-                      <div className="shrink-0 text-right">
-                        <p className="text-sm font-bold text-[#2f2a24]">
-                          {formatPeso(item.price * item.quantity)}
-                        </p>
+                            <input
+                              value={editItemQuantity}
+                              onChange={(e)=>setEditItemQuantity(e.target.value)}
+                              type="number"
+                              className="rounded-xl border border-[#e7d9c8] px-3 py-2"
+                            />
+                          </div>
 
-                        <div className="mt-2 flex items-center justify-end gap-3">
-                          <button
-                            onClick={() => startEditingItem(item)}
-                            className="text-sm font-semibold text-[#9a6b3f]"
-                          >
-                            Edit
-                          </button>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={saveEditedItem}
+                              className="rounded-xl bg-[#2f2a24] px-4 py-2 text-white"
+                            >
+                              Save
+                            </button>
 
-                          <button
-                            onClick={() => removeItem(item.id)}
-                            className="text-sm font-semibold text-[#b44a3c]"
-                          >
-                            Remove
-                          </button>
+                            <button
+                              onClick={cancelEditingItem}
+                              className="rounded-xl bg-[#fff1f0] px-4 py-2 text-[#b44a3c]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-bold text-[#2f2a24]">
+                              {item.name}
+                            </p>
+
+                            <p className="text-sm text-[#897b6e]">
+                              {formatPeso(item.price)} × {item.quantity}
+                            </p>
+                          </div>
+
+                          <div className="text-right">
+                            <p className="font-bold">
+                              {formatPeso(item.price * item.quantity)}
+                            </p>
+
+                            <div className="mt-2 flex gap-3">
+                              <button
+                                onClick={()=>startEditingItem(item)}
+                                className="text-sm font-semibold text-[#9a6b3f]"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                onClick={()=>removeItem(item.id)}
+                                className="text-sm font-semibold text-[#b44a3c]"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
+
                 </div>
-              );
-            })}
+
+
+                <div className="mt-3 rounded-2xl bg-[#2f2a24] px-4 py-3 text-white">
+                  <div className="flex justify-between">
+                    <span className="text-sm">
+                      Store Total
+                    </span>
+
+                    <span className="font-bold">
+                      {formatPeso(
+                        store.items.reduce(
+                          (sum:number,item:GroceryItem)=>
+                            sum + item.price * item.quantity,
+                          0
+                        )
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -844,12 +1160,75 @@ function GroceryScreen({
           >
             Save Trip
           </button>
+          <button
+            onClick={shareList}
+            className="mt-4 w-full rounded-2xl bg-white px-4 py-3 font-semibold text-[#2f2a24] active:scale-[0.99]"
+          >
+            Share List
+          </button>
         </div>
       )}
     </>
   );
 }
+function ShareImportScreen({
+  sharedData,
+  importSharedList,
+}: {
+  sharedData: {
+    budget: number;
+    items: GroceryItem[];
+    stores: Store[];
+  };
+  importSharedList: () => void;
+}) {
+  return (
+    <div className="min-h-screen bg-[#fffaf4] p-6">
+      <div className="rounded-3xl bg-white p-6 shadow-sm">
+        <h1 className="text-2xl font-black text-[#2f2a24]">
+          Shared Grocery List
+        </h1>
 
+        <p className="mt-3 text-[#897b6e]">
+          Someone shared a grocery list with you.
+        </p>
+
+        <div className="mt-5 rounded-2xl bg-[#fffaf4] p-4">
+          <p>
+            Budget:
+            <b>
+              {" "}
+              ₱{sharedData.budget.toLocaleString()}
+            </b>
+          </p>
+
+          <p>
+            Stores:
+            <b>
+              {" "}
+              {sharedData.stores.length}
+            </b>
+          </p>
+
+          <p>
+            Items:
+            <b>
+              {" "}
+              {sharedData.items.length}
+            </b>
+          </p>
+        </div>
+
+        <button
+          onClick={importSharedList}
+          className="mt-5 w-full rounded-2xl bg-[#32418C] px-4 py-3 font-bold text-white"
+        >
+          Import Copy
+        </button>
+      </div>
+    </div>
+  );
+}
 type HistoryScreenProps = {
   history: GroceryTrip[];
   formatPeso: (amount: number) => string;
@@ -883,9 +1262,11 @@ function HistoryScreen({
   const totalSpent = history.reduce((total, trip) => {
     return total + trip.spent;
   }, 0);
-
   const totalItems = history.reduce((total, trip) => {
-    return total + trip.items.length;
+    return total + trip.stores.reduce(
+      (sum, store) => sum + store.items.length,
+      0
+    );
   }, 0);
 
   return (
@@ -979,8 +1360,12 @@ function HistoryScreen({
                       </h2>
 
                       <p className="mt-1 text-xs text-[#897b6e]">
-                        Saved at {formatTime(trip.date)} · {trip.items.length}{" "}
-                        item{trip.items.length === 1 ? "" : "s"}
+                        Saved at {formatTime(trip.date)} · {
+                          trip.stores.reduce(
+                            (sum, store)=>sum + store.items.length,
+                            0
+                          )
+                        } items
                       </p>
                     </div>
 
@@ -1035,29 +1420,44 @@ function HistoryScreen({
                     </p>
 
                     <p className="text-xs font-semibold text-[#897b6e]">
-                      {trip.items.length} total
+                      {
+                        trip.stores.reduce(
+                          (sum,store)=>sum + store.items.length,
+                          0
+                        )
+                      } total
                     </p>
                   </div>
 
                   <div className="space-y-2">
-                    {trip.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-3 rounded-2xl bg-[#fffaf4] px-4 py-3 ring-1 ring-[#eadbc8]"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-[#2f2a24]">
-                            {item.name}
-                          </p>
+                    {trip.stores.map((store)=>(
+                      <div key={store.id} className="mb-4">
 
-                          <p className="mt-1 text-xs text-[#897b6e]">
-                            {formatPeso(item.price)} × {item.quantity}
-                          </p>
-                        </div>
-
-                        <p className="shrink-0 text-sm font-bold text-[#51483f]">
-                          {formatPeso(item.price * item.quantity)}
+                        <p className="mb-2 font-bold text-[#2f2a24]">
+                          🏪 {store.name}
                         </p>
+
+                        {store.items.map((item)=>(
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between gap-3 rounded-2xl bg-[#fffaf4] px-4 py-3 ring-1 ring-[#eadbc8]"
+                          >
+                            <div>
+                              <p className="text-sm font-bold text-[#2f2a24]">
+                                {item.name}
+                              </p>
+
+                              <p className="text-xs text-[#897b6e]">
+                                {formatPeso(item.price)} × {item.quantity}
+                              </p>
+                            </div>
+
+                            <p className="font-bold">
+                              {formatPeso(item.price * item.quantity)}
+                            </p>
+                          </div>
+                        ))}
+
                       </div>
                     ))}
                   </div>
