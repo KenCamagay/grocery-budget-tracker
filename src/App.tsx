@@ -305,28 +305,46 @@ const addStore = (name:string) => {
 
   setSelectedStoreId(newStore.id);
 };
+const deleteStore = (storeId:string) => {
+  setStores(current =>
+    current.filter(
+      store => store.id !== storeId
+    )
+  );
 
-  const addItem = () => {
+  setItems(current =>
+    current.filter(
+      item => item.storeId !== storeId
+    )
+  );
+
+  if(selectedStoreId === storeId){
+    setSelectedStoreId("");
+  }
+};
+ const addItem = () => {
     const cleanName = itemName.trim();
     const price = Number(itemPrice);
     const quantity = Number(itemQuantity);
+    const storeExists = stores.some((store) => store.id === selectedStoreId);
 
-    if (!cleanName || !price || price <= 0 || !quantity || quantity <= 0) {
+    if (
+      !storeExists ||
+      !cleanName ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isFinite(quantity) ||
+      quantity <= 0
+    ) {
       return;
     }
 
-    const newItem:GroceryItem={
-
-      id:createId(),
-
-      name:cleanName,
-
+    const newItem: GroceryItem = {
+      id: createId(),
+      name: cleanName,
       price,
-
       quantity,
-
-      storeId:selectedStoreId
-
+      storeId: selectedStoreId,
     };
 
     setItems((currentItems) => [newItem, ...currentItems]);
@@ -335,7 +353,7 @@ const addStore = (name:string) => {
     setItemQuantity("1");
     setSelectedStoreId("");
   };
-
+  
   const removeItem = (id: string) => {
     setItems((currentItems) => currentItems.filter((item) => item.id !== id));
   };
@@ -509,6 +527,7 @@ const shareList = async () => {
             selectedStoreId={selectedStoreId}
             setSelectedStoreId={setSelectedStoreId}
             addStore={addStore}
+            deleteStore={deleteStore}
             shareList={shareList}
           />
         )}
@@ -740,6 +759,8 @@ type GroceryScreenProps = {
 
   addStore:
   (name:string)=>void;
+  deleteStore:
+(id:string)=>void;
   shareList:()=>void;
 };
 
@@ -777,16 +798,15 @@ function GroceryScreen({
   selectedStoreId,
   setSelectedStoreId,
   addStore,
+  deleteStore,
   shareList,
   }: GroceryScreenProps){
-    const groupedItems = stores.map((store)=>({
-    ...store,
-    items: items.filter(
-      item => item.storeId === store.id
-    )
-  })).filter(
-    store => store.items.length > 0
-  );
+   const groupedItems = stores.map((store) => ({
+  ...store,
+  items: items.filter(
+    (item) => item.storeId === store.id
+  ),
+}));
   return (
     <>
       <div className="mb-5 flex items-center justify-between">
@@ -934,62 +954,6 @@ function GroceryScreen({
               </button>
             </div>
           </div>
-
-          <select
-            value={selectedStoreId}
-            onChange={(e) => setSelectedStoreId(e.target.value)}
-            className="w-full rounded-2xl border border-[#e7d9c8] bg-[#fffaf4] px-4 py-3"
-          >
-            <option value="">
-              Select Store
-            </option>
-
-            {stores.map((store) => (
-              <option
-                key={store.id}
-                value={store.id}
-              >
-                {store.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={itemName}
-            onChange={(event) => setItemName(event.target.value)}
-            type="text"
-            className="w-full rounded-2xl border border-[#e7d9c8] bg-[#fffaf4] px-4 py-3 font-medium outline-none focus:border-[#b9824f]"
-            placeholder="Product name"
-          />
-
-          <div className="grid grid-cols-[1fr_110px] gap-3">
-            <input
-              value={itemPrice}
-              onChange={(event) => setItemPrice(event.target.value)}
-              type="number"
-              min="0"
-              className="w-full rounded-2xl border border-[#e7d9c8] bg-[#fffaf4] px-4 py-3 font-medium outline-none focus:border-[#b9824f]"
-              placeholder="Price each"
-            />
-
-            <input
-              value={itemQuantity}
-              onChange={(event) => setItemQuantity(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") addItem();
-              }}
-              type="number"
-              min="1"
-              className="w-full rounded-2xl border border-[#e7d9c8] bg-[#fffaf4] px-4 py-3 text-center font-medium outline-none focus:border-[#b9824f]"
-              placeholder="Qty"
-            />
-          </div>
-
-          <button
-            onClick={addItem}
-            className="w-full rounded-2xl bg-[#2f2a24] px-4 py-3 font-semibold text-white shadow-sm active:scale-[0.99]"
-          >
-            Add to List
-          </button>
         </div>
       </div>
 
@@ -1015,24 +979,124 @@ function GroceryScreen({
           )}
         </div>
 
-        {items.length === 0 ? (
+       {stores.length === 0 ? (
           <div className="mt-4 rounded-3xl border border-dashed border-[#ddcdbb] bg-[#fffaf4] p-6 text-center">
-            <p className="text-sm font-bold text-[#51483f]">No products yet</p>
+            <p className="text-sm font-bold text-[#51483f]">No stores yet</p>
+
             <p className="mt-1 text-xs leading-5 text-[#897b6e]">
-              Add the first item to start tracking your total.
+              Add a shopping store above before adding products.
             </p>
           </div>
         ) : (
           <div className="mt-4 space-y-3">
             {groupedItems.map((store)=>(
               <div
-                key={store.id}
-                className="rounded-3xl bg-[#fffaf4] p-4 ring-1 ring-[#eadbc8]"
-              >
+                  key={store.id}
+                  className="rounded-[2rem] bg-white p-5 shadow-md ring-1 ring-[#eee3d5]"
+                >
 
-                <h3 className="mb-3 text-lg font-bold text-[#2f2a24]">
-                  🏪 {store.name}
-                </h3>
+               <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-lg font-black text-[#2f2a24]">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eaf5ed] text-xl">
+                        🛒
+                      </span>
+
+                      {store.name}
+                    </h3>
+
+                    <p className="mt-2 text-xs font-medium text-[#897b6e]">
+                      {store.items.length} product
+                      {store.items.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+
+                 <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteStore(store.id);
+                      }}
+                      className="rounded-2xl bg-[#fff1f0] px-3 py-2 text-xs font-bold text-[#b44a3c]"
+                    >
+                      Delete
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedStoreId === store.id) {
+                          setSelectedStoreId("");
+                        } else {
+                          setSelectedStoreId(store.id);
+                        }
+                      }}
+                      className="rounded-2xl bg-[#4f9d69] px-4 py-2 text-xs font-bold text-white"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                  {selectedStoreId === store.id && (
+                    <div className="mb-4 space-y-3 rounded-2xl bg-white p-4 ring-1 ring-[#eadbc8]">
+                      <p className="text-sm font-bold text-[#2f2a24]">
+                        Add product to {store.name}
+                      </p>
+
+                      <input
+                        value={itemName}
+                        onChange={(event) => setItemName(event.target.value)}
+                        type="text"
+                        className="w-full rounded-xl border border-[#e7d9c8] bg-[#fffaf4] px-3 py-2.5 font-medium outline-none focus:border-[#b9824f]"
+                        placeholder="Product name"
+                        autoFocus
+                      />
+
+                      <div className="grid grid-cols-[1fr_90px] gap-3">
+                        <input
+                          value={itemPrice}
+                          onChange={(event) => setItemPrice(event.target.value)}
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          className="w-full rounded-xl border border-[#e7d9c8] bg-[#fffaf4] px-3 py-2.5 font-medium outline-none focus:border-[#b9824f]"
+                          placeholder="Price each"
+                        />
+
+                        <input
+                          value={itemQuantity}
+                          onChange={(event) => setItemQuantity(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              addItem();
+                            }
+                          }}
+                          type="number"
+                          min="1"
+                          step="1"
+                          className="w-full rounded-xl border border-[#e7d9c8] bg-[#fffaf4] px-3 py-2.5 text-center font-medium outline-none focus:border-[#b9824f]"
+                          placeholder="Qty"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={addItem}
+                        disabled={
+                          !selectedStoreId ||
+                          !itemName.trim() ||
+                          !Number.isFinite(Number(itemPrice)) ||
+                          Number(itemPrice) <= 0 ||
+                          !Number.isFinite(Number(itemQuantity)) ||
+                          Number(itemQuantity) <= 0
+                        }
+                        className="w-full rounded-xl bg-[#2f2a24] px-4 py-3 font-semibold text-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Add to {store.name}
+                      </button>
+                    </div>
+                  )}
 
 
                 <div className="space-y-3">
@@ -1040,7 +1104,7 @@ function GroceryScreen({
                   {store.items.map((item)=>(
                     <div
                       key={item.id}
-                      className="rounded-2xl bg-white p-4 ring-1 ring-[#eadbc8]"
+                      className="rounded-2xl bg-[#fffaf4] p-4 transition hover:shadow-sm"
                     >
                       {editingItemId === item.id ? (
                         <div className="space-y-3">
@@ -1123,13 +1187,13 @@ function GroceryScreen({
                 </div>
 
 
-                <div className="mt-3 rounded-2xl bg-[#2f2a24] px-4 py-3 text-white">
+                <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#f8f6f1] px-4 py-3">
                   <div className="flex justify-between">
-                    <span className="text-sm">
+                   <span className="text-sm font-semibold text-[#897b6e]">
                       Store Total
                     </span>
 
-                    <span className="font-bold">
+                    <span className="font-black text-[#2f2a24]">
                       {formatPeso(
                         store.items.reduce(
                           (sum:number,item:GroceryItem)=>
